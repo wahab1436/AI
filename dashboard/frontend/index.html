@@ -1,0 +1,292 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Trading AI - Chart Analysis</title>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: #0a0a0a;
+            color: #e0e0e0;
+            line-height: 1.6;
+        }
+        .container { max-width: 1200px; margin: 0 auto; padding: 2rem; }
+        header { text-align: center; padding: 2rem 0; border-bottom: 1px solid #333; }
+        h1 { font-size: 1.8rem; margin-bottom: 0.5rem; }
+        .subtitle { color: #888; font-size: 0.9rem; }
+        
+        .upload-zone {
+            border: 2px dashed #444;
+            border-radius: 12px;
+            padding: 3rem;
+            text-align: center;
+            margin: 2rem 0;
+            cursor: pointer;
+            transition: border-color 0.2s;
+        }
+        .upload-zone:hover { border-color: #0066ff; }
+        .upload-zone.dragover { border-color: #00ff88; background: #111; }
+        
+        .preview { max-width: 400px; margin: 1rem auto; display: none; }
+        .preview img { width: 100%; border-radius: 8px; }
+        
+        .analyze-btn {
+            background: #0066ff;
+            color: white;
+            border: none;
+            padding: 0.8rem 2rem;
+            border-radius: 8px;
+            font-size: 1rem;
+            cursor: pointer;
+            margin: 1rem 0;
+        }
+        .analyze-btn:disabled { background: #333; cursor: not-allowed; }
+        
+        .result {
+            background: #1a1a1a;
+            border-radius: 12px;
+            padding: 1.5rem;
+            margin-top: 2rem;
+            display: none;
+        }
+        .signal { font-size: 2rem; font-weight: bold; text-align: center; margin: 1rem 0; }
+        .signal.buy { color: #00ff88; }
+        .signal.sell { color: #ff4444; }
+        .signal.notrade { color: #888; }
+        
+        .probabilities { display: flex; gap: 1rem; margin: 1rem 0; }
+        .prob-bar { flex: 1; text-align: center; }
+        .prob-fill {
+            height: 8px;
+            background: #333;
+            border-radius: 4px;
+            margin: 0.5rem 0;
+            overflow: hidden;
+        }
+        .prob-fill > span {
+            display: block;
+            height: 100%;
+            transition: width 0.3s;
+        }
+        .prob-fill.buy span { background: #00ff88; }
+        .prob-fill.sell span { background: #ff4444; }
+        .prob-fill.notrade span { background: #666; }
+        
+        .smc-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1rem; margin: 1rem 0; }
+        .smc-item { background: #222; padding: 0.8rem; border-radius: 6px; }
+        .smc-label { font-size: 0.8rem; color: #888; }
+        .smc-value { font-weight: 500; }
+        
+        .shap-section { margin-top: 1.5rem; }
+        .shap-item { display: flex; justify-content: space-between; padding: 0.3rem 0; border-bottom: 1px solid #333; }
+        
+        .loading { text-align: center; color: #888; display: none; }
+        .error { color: #ff4444; text-align: center; margin: 1rem 0; display: none; }
+        
+        footer { text-align: center; padding: 2rem; color: #666; font-size: 0.8rem; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>Trading AI System</h1>
+            <p class="subtitle">CNN + SMC + XGBoost Chart Analysis</p>
+        </header>
+        
+        <div class="upload-zone" id="dropZone">
+            <p>Drag & drop chart image here</p>
+            <p style="color: #666; font-size: 0.9rem; margin-top: 0.5rem;">or click to browse (PNG, JPG, max 10MB)</p>
+            <input type="file" id="fileInput" accept="image/png,image/jpeg" style="display: none;">
+        </div>
+        
+        <div class="preview" id="preview">
+            <img id="previewImg" src="" alt="Preview">
+        </div>
+        
+        <button class="analyze-btn" id="analyzeBtn" disabled>Analyze Chart</button>
+        
+        <div class="loading" id="loading">Analyzing... Please wait</div>
+        <div class="error" id="error"></div>
+        
+        <div class="result" id="result">
+            <div class="signal" id="signal"></div>
+            
+            <div class="probabilities">
+                <div class="prob-bar">
+                    <div>BUY</div>
+                    <div class="prob-fill buy"><span id="probBuy" style="width: 0%"></span></div>
+                    <div id="probBuyText">0%</div>
+                </div>
+                <div class="prob-bar">
+                    <div>SELL</div>
+                    <div class="prob-fill sell"><span id="probSell" style="width: 0%"></span></div>
+                    <div id="probSellText">0%</div>
+                </div>
+                <div class="prob-bar">
+                    <div>NO TRADE</div>
+                    <div class="prob-fill notrade"><span id="probNoTrade" style="width: 0%"></span></div>
+                    <div id="probNoTradeText">0%</div>
+                </div>
+            </div>
+            
+            <p><strong>Pattern:</strong> <span id="pattern"></span> (Reliability: <span id="reliability"></span>)</p>
+            <p><strong>Recommendation:</strong> <span id="recommendation"></span></p>
+            
+            <h3 style="margin: 1.5rem 0 1rem;">SMC Analysis</h3>
+            <div class="smc-grid" id="smcGrid"></div>
+            
+            <div class="shap-section">
+                <h3 style="margin: 1.5rem 0 1rem;">Top Features</h3>
+                <div id="shapList"></div>
+            </div>
+            
+            <p style="margin-top: 1rem; font-size: 0.8rem; color: #666;">
+                Timestamp: <span id="timestamp"></span>
+            </p>
+        </div>
+        
+        <footer>
+            <p>Trading AI System v1.0.0 | Predictions only - No live trading</p>
+        </footer>
+    </div>
+
+    <script>
+        const dropZone = document.getElementById('dropZone');
+        const fileInput = document.getElementById('fileInput');
+        const preview = document.getElementById('preview');
+        const previewImg = document.getElementById('previewImg');
+        const analyzeBtn = document.getElementById('analyzeBtn');
+        const loading = document.getElementById('loading');
+        const error = document.getElementById('error');
+        const result = document.getElementById('result');
+        
+        let selectedFile = null;
+        
+        dropZone.addEventListener('click', () => fileInput.click());
+        
+        dropZone.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            dropZone.classList.add('dragover');
+        });
+        
+        dropZone.addEventListener('dragleave', () => {
+            dropZone.classList.remove('dragover');
+        });
+        
+        dropZone.addEventListener('drop', (e) => {
+            e.preventDefault();
+            dropZone.classList.remove('dragover');
+            handleFile(e.dataTransfer.files[0]);
+        });
+        
+        fileInput.addEventListener('change', (e) => {
+            handleFile(e.target.files[0]);
+        });
+        
+        function handleFile(file) {
+            if (!file || !file.type.startsWith('image/')) {
+                showError('Please select a valid image file');
+                return;
+            }
+            if (file.size > 10 * 1024 * 1024) {
+                showError('File size must be under 10MB');
+                return;
+            }
+            
+            selectedFile = file;
+            const reader = new FileReader();
+            reader.onload = (e) => {
+                previewImg.src = e.target.result;
+                preview.style.display = 'block';
+                analyzeBtn.disabled = false;
+                error.style.display = 'none';
+            };
+            reader.readAsDataURL(file);
+        }
+        
+        function showError(msg) {
+            error.textContent = msg;
+            error.style.display = 'block';
+            result.style.display = 'none';
+        }
+        
+        analyzeBtn.addEventListener('click', async () => {
+            if (!selectedFile) return;
+            
+            loading.style.display = 'block';
+            error.style.display = 'none';
+            result.style.display = 'none';
+            analyzeBtn.disabled = true;
+            
+            const formData = new FormData();
+            formData.append('chart', selectedFile);
+            
+            try {
+                const response = await fetch('http://localhost:8000/predict', {
+                    method: 'POST',
+                    body: formData
+                });
+                
+                if (!response.ok) {
+                    const err = await response.json();
+                    throw new Error(err.detail || 'Analysis failed');
+                }
+                
+                const data = await response.json();
+                displayResult(data);
+            } catch (err) {
+                showError(err.message);
+            } finally {
+                loading.style.display = 'none';
+                analyzeBtn.disabled = false;
+            }
+        });
+        
+        function displayResult(data) {
+            const signalEl = document.getElementById('signal');
+            signalEl.textContent = data.signal;
+            signalEl.className = 'signal ' + data.signal.toLowerCase().replace('_', '');
+            
+            document.getElementById('probBuy').style.width = (data.buy_probability * 100) + '%';
+            document.getElementById('probSell').style.width = (data.sell_probability * 100) + '%';
+            document.getElementById('probNoTrade').style.width = (data.notrade_probability * 100) + '%';
+            
+            document.getElementById('probBuyText').textContent = Math.round(data.buy_probability * 100) + '%';
+            document.getElementById('probSellText').textContent = Math.round(data.sell_probability * 100) + '%';
+            document.getElementById('probNoTradeText').textContent = Math.round(data.notrade_probability * 100) + '%';
+            
+            document.getElementById('pattern').textContent = data.pattern_detected;
+            document.getElementById('reliability').textContent = Math.round(data.pattern_reliability * 100) + '%';
+            document.getElementById('recommendation').textContent = data.recommendation;
+            document.getElementById('timestamp').textContent = new Date(data.timestamp).toLocaleString();
+            
+            const smcGrid = document.getElementById('smcGrid');
+            smcGrid.innerHTML = '';
+            const smcKeys = ['market_structure', 'order_block', 'fair_value_gap', 'liquidity_level', 'impulse', 'market_state', 'volatility'];
+            smcKeys.forEach(key => {
+                if (data.smc_analysis[key]) {
+                    const item = document.createElement('div');
+                    item.className = 'smc-item';
+                    item.innerHTML = `<div class="smc-label">${key.replace('_', ' ').toUpperCase()}</div><div class="smc-value">${data.smc_analysis[key]}</div>`;
+                    smcGrid.appendChild(item);
+                }
+            });
+            
+            const shapList = document.getElementById('shapList');
+            shapList.innerHTML = '';
+            if (data.shap_values && data.shap_values.top_features) {
+                data.shap_values.top_features.forEach(feat => {
+                    const item = document.createElement('div');
+                    item.className = 'shap-item';
+                    item.innerHTML = `<span>${feat.name}</span><span>${feat.importance.toFixed(3)}</span>`;
+                    shapList.appendChild(item);
+                });
+            }
+            
+            result.style.display = 'block';
+        }
+    </script>
+</body>
+</html>
