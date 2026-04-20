@@ -1,0 +1,18 @@
+paths:
+  cnn_weights: cnn_model/weights/cnn_model.pt
+  fusion_model: models/fusion_model.pkl
+  pca_model: models/pca.pkl
+  scaler: models/scaler.pkl
+  image_size: [380, 380]
+  candle_window: 50
+
+model:
+  cnn_backbone: efficientnet_b3
+  embedding_dim: 1536
+  pca_components: 128
+  num_classes: 3
+  class_labels: ["NO_TRADE", "SELL", "BUY"]
+
+inference:
+  min_confidence_threshold: 0.65
+  max_latency_ms: 200
